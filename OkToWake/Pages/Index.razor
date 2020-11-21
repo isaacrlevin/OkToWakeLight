@@ -1,0 +1,61 @@
+﻿@page "/"
+@using BlazorColorPicker
+
+@inject IOptionsMonitor<ConfigWrapper> Config
+@inject AppState appState
+@inject IJSRuntime jsRuntime;
+<div class="container text-body">
+
+    Add New Row
+
+
+    @foreach (var interval in Config.CurrentValue.TimeIntervals)
+    {
+        <div class="row">
+            <div class="container-fluid">
+                <div class="row-fluid">
+                    <div class="centering text-center">
+                        <span>Time Interval Name:  @interval.TimeIntervalName</span> <input value="@interval.TimeIntervalStart" type="time" id="@interval.TimeIntervalName + @interval.TimeIntervalStart" name="@interval.TimeIntervalName + @interval.TimeIntervalStart"> 
+                        To <input value="@interval.TimeIntervalEnd" type="time" id="@interval.TimeIntervalName + @interval.TimeIntervalEnd" name="@interval.TimeIntervalName + @interval.TimeIntervalEnd">
+                        <br />
+                        <input type="color" id="html5colorpicker" @onchange="@((ev) => SetColor(interval.TimeIntervalName))" value="@interval.TimeColor" style="width:20%;">
+                        <br />
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    <div class="row">
+        <div class="container-fluid">
+            <div class="row-fluid">
+                <div class="centering text-center">
+                    Save Intervals <button @onclick="SaveSettings" class="btn btn-primary">Set Color</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+
+@code {
+    bool settingsSaved = false;
+    string message;
+
+    async Task SetColor(string name)
+    {
+        var interval = Config.CurrentValue.TimeIntervals.Where(a => a.TimeIntervalName == name).FirstOrDefault();
+
+        if (interval != null)
+        {
+            interval.TimeColor = await jsRuntime.InvokeAsync<string>("getColor");
+        }
+    }
+
+    void SaveSettings()
+    {
+        System.IO.File.WriteAllText($"{System.IO.Directory.GetCurrentDirectory()}/appsettings.json", JsonConvert.SerializeObject(Config.CurrentValue));
+        message = "Settings Saved";
+        settingsSaved = true;
+    }
+}
