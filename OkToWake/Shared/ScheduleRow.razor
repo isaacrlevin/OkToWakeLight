@@ -1,0 +1,132 @@
+﻿@inject IScheduleFilters Filters
+
+@if (CurrentSchedule != null)
+{
+    <tbody>
+        <tr>
+            <td>
+                <a title="Edit" href="edit/@CurrentSchedule.ScheduleId">
+                    &nbsp;📝&nbsp;
+                </a>
+                @if (CanDelete)
+                {
+                    <span @onclick="DeleteRequestAsync"
+                          title="Delete" class="clickable red">❌</span> }
+                else
+                {
+                    <span>&nbsp;</span>}
+                &nbsp;
+            </td>
+            <td>
+                <a href="@ViewLink" alt="View Details"
+                   title="View Details">
+                    @Name
+                </a>
+            </td>
+            @if (!DeleteConfirmation)
+            {
+                <td>@CurrentSchedule.IsEnabled</td>
+                <td>@CurrentSchedule.PollingInterval</td>
+                <td>@CurrentSchedule.Brightness</td>
+            }
+            else
+            {
+                <td colspan="3">
+                    <DeletePrompt Confirmation="ConfirmAsync" />
+                </td>
+            }
+        </tr>
+    </tbody>
+}
+
+@code { private Schedule _currentSchedule;
+
+            /// <summary>
+            /// The <see cref="Schedule"/> being rendered.
+            /// </summary>
+            [Parameter]
+            public Schedule CurrentSchedule
+            {
+                get => _currentSchedule;
+                set
+                {
+                    if (value != null && !value.Equals(_currentSchedule))
+                    {
+                        _currentSchedule = value;
+                        DeleteConfirmation = false;
+                    }
+                }
+            }
+
+            /// <summary>
+            /// Event to raise when a Schedule delete is requested.
+            /// </summary>
+            [Parameter]
+            public EventCallback DeleteSchedule { get; set; }
+
+            /// <summary>
+            /// Overall wrapper of functionality.
+            /// </summary>
+            [CascadingParameter]
+            public GridWrapper Wrapper { get; set; }
+
+            /// <summary>
+            /// Returns <c>true</c> if conditions for delete are met.
+            /// </summary>
+            private bool CanDelete => !DeleteConfirmation &&
+            (Wrapper.DeleteRequestId == Guid.Empty ||
+            Wrapper.DeleteRequestId == CurrentSchedule?.ScheduleId);
+
+            /// <summary>
+            /// Navigate to view.
+            /// </summary>
+            private string ViewLink => $"View/{CurrentSchedule?.ScheduleId}";
+
+            /// <summary>
+            /// Confirm the delete.
+            /// </summary>
+            private bool DeleteConfirmation { get; set; }
+
+            /// <summary>
+            /// Called based on confirmation.
+            /// </summary>
+            /// <param name="confirmed"><c>True</c> when confirmed</param>
+            /// <returns>A <see cref="Task"/>.</returns>
+            private async Task ConfirmAsync(bool confirmed)
+            {
+                if (confirmed)
+                {
+                    await DeleteAsync();
+                }
+                else
+                {
+                    DeleteConfirmation = false;
+                    await Wrapper.DeleteRequested.InvokeAsync(Guid.Empty);
+                }
+            }
+
+            /// <summary>
+            /// Set delete to true.
+            /// </summary>
+            private async Task DeleteRequestAsync()
+            {
+                if (Wrapper.DeleteRequestId == Guid.Empty)
+                {
+                    DeleteConfirmation = true;
+                    await Wrapper.DeleteRequested.InvokeAsync(CurrentSchedule.ScheduleId);
+                }
+            }
+
+            /// <summary>
+            /// Deletes the <see cref="Schedule"/>.
+            /// </summary>
+            /// <returns>A <see cref="Task"/>.</returns>
+            private Task DeleteAsync()
+            {
+                return DeleteSchedule.InvokeAsync(this);
+            }
+
+            /// <summary>
+            /// Correctly formatted name.
+            /// </summary>
+            private string Name => $"{CurrentSchedule?.ScheduleName}"; }

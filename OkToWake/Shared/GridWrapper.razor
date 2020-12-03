@@ -1,0 +1,29 @@
+﻿<CascadingValue Value="this" IsFixed="true">
+    @ChildContent
+</CascadingValue>
+
+@code {
+    /// <summary>
+    /// Renders whatever is inside the tags and cascades a copy of itself.
+    /// </summary>
+    [Parameter]
+    public RenderFragment ChildContent { get; set; }
+
+    /// <summary>
+    /// Call when the filter has changed to refresh the <see cref="Schedule"/>
+    /// list.
+    /// </summary>
+    [Parameter]
+    public EventCallback FilterChanged { get; set; }
+
+    /// <summary>
+    /// Call when a schedule is requested to be deleted.
+    /// </summary>
+    [Parameter]
+    public EventCallback<Guid> DeleteRequested { get; set; }
+
+    /// <summary>
+    /// The id of the <see cref="Schedule"/> to be deleted.
+    /// </summary>
+    public Guid DeleteRequestId { get; set; }
+}

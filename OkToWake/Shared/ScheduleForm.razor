@@ -1,0 +1,348 @@
+﻿@using Microsoft.AspNetCore.Components.Forms;
+
+@using Microsoft.EntityFrameworkCore
+@using BlazorColorPicker
+@using OkToWake.Models
+@inject IJSRuntime jsRuntime;
+@inject OkToWakeContext _context
+
+<h1>@Mode Schedule</h1>
+<Switch TValue="bool" @bind-Checked="@Schedule.IsEnabled">Enabled</Switch>
+<hr />
+@if (Schedule != null)
+{
+<EditForm Model="@Schedule"
+   OnInvalidSubmit="(async () => await HandleSubmitAsync(false))"
+   OnValidSubmit="(async () => await HandleSubmitAsync(true))">
+   <DataAnnotationsValidator />
+   <Microsoft.AspNetCore.Components.Forms.ValidationSummary />
+   <div class="container text-body centering text-center">
+      <div class="row">
+         <div class="col-4">
+            <h5>Schedule Name</h5>
+         </div>
+         <div class="col-7">
+            <input style="width: 100%; text-align:center" @bind-value="@Schedule.ScheduleName" type="text" />
+         </div>
+      </div>
+      <div class="row">
+         <div class="col-4">
+            <h5>LIFX Token</h5>
+            <a href="https://cloud.lifx.com/settings" target="_blank">Get Token</a>
+         </div>
+         <div class="col-7">
+            <input style="width: 100%; text-align:center" @bind-value="@Schedule.LIFXApiKey" type="text" />
+         </div>
+      </div>
+      <br /><br />
+      @if (!string.IsNullOrEmpty(Schedule.LIFXApiKey))
+      {
+      <input type="button" @onclick="@((ev) => CheckLIFX("Lights"))" class="btn btn-primary" value="Get Lights">
+      <span>&nbsp;&nbsp;&nbsp;</span>
+      <input type="button" @onclick="@((ev) => CheckLIFX("Groups"))" class="btn btn-primary" value="Get Groups">}
+      <br /><br />
+      <div style="height:150px">
+         <SpinLoader Center="true" IsLoading="@(isLoadingLights)">
+            <ContentTemplate>
+               @if (showLifxMessage)
+               {
+               <div class="row">
+                  <div class="col-12">
+                     <span class="@lifxMessageClass">@lifxMessage</span>
+                  </div>
+               </div>
+               }
+               <br />
+               @if (loadedLights != null)
+               {
+               <div class="row">
+                  <div class="col-12">
+                     <select class="custom-select" style="width:50%" @onchange="OnChange">
+                        <option disabled="disabled">Select</option>
+                        @foreach (var light in loadedLights)
+                        {
+                        if (light.GetType() == typeof(LifxCloud.NET.Models.Group))
+                        {
+                        var obj = (LifxCloud.NET.Models.Group)light;
+                        @if ($"group_id:{obj.Id}" == Schedule.SelectedLIFXItemId)
+                        {
+                        <option selected="selected" value=group_id:@obj.Id>@obj.Label</option>
+                        }
+                        else
+                        {
+                        <option value=group_id:@obj.Id>@obj.Label</option>
+                        } }
+                        else
+                        {
+                        var obj = (LifxCloud.NET.Models.Light)light;
+                        @if ($"id:{obj.Id}" == Schedule.SelectedLIFXItemId)
+                        {
+                        <option selected="selected" value=id:@obj.Id>@obj.Label</option>
+                        }
+                        else
+                        {
+                        <option value=id:@obj.Id>@obj.Label</option>
+                        }}
+                        }
+                     </select>
+                  </div>
+               </div>
+               }
+            </ContentTemplate>
+         </SpinLoader>
+      </div>
+      <br />
+      <br />
+      <div class="row">
+         <div class="col-4">
+            <h5>Light Update Interval (in seconds)</h5>
+         </div>
+         <div class="col-6">
+            <Slider TValue="double" @bind-Value="Schedule.PollingInterval" Step=".1" Min="1.0" Max="5.0" />
+         </div>
+         <div class="col-1">
+            <input style="width:50px" @bind-value="@Schedule.PollingInterval" type="text" />
+         </div>
+      </div>
+      <br /><br />
+      <div class="row">
+         <div class="col-4">
+            <h5>Brightness</h5>
+         </div>
+         <div class="col-6">
+            <Slider TValue="int" @bind-Value="Schedule.Brightness" Step="1" Min="0" Max="100" />
+         </div>
+         <div class="col-1">
+            <input style="width:50px" @bind-value="@Schedule.Brightness" type="text" />
+         </div>
+      </div>
+      <br /><br /><br /><br />
+      <h3>Time Intervals</h3>
+      <input type="button" @onclick="AddNewInterval" class="btn btn-primary" value="Add New Interval">
+      <br />
+      <br />
+      @if (Schedule.TimeIntervals.Count == 0)
+      {
+      <div class="row">
+         <div class="col-12 alert alert-warning">
+            No Intervals exist.
+         </div>
+      </div>
+      }
+      else
+      {
+      @foreach (var interval in Schedule.TimeIntervals)
+      {
+      <div class="row">
+         <div class="col-6">
+            <h5><i @onclick="@((ev) => RemoveInterval(interval.TimeIntervalName))" class="fas fa-trash"></i>  Time Interval Name: <input type="text" @bind-value=@interval.TimeIntervalName /></h5>
+         </div>
+         <div class="col-6">
+            <input @bind="interval.TimeIntervalStartAsDate" type="time" id="@interval.TimeIntervalName + 'Start'" name="@interval.TimeIntervalName + 'Start'">
+            To <input @bind="@interval.TimeIntervalEndAsDate" type="time" id="@interval.TimeIntervalName + 'End'" name="@interval.TimeIntervalName + 'End'">
+         </div>
+      </div>
+      <br />
+      <div class="row">
+         <div class="col-12">
+            <input type="color" id="@interval.TimeIntervalName" @onchange="@((ev) => SetColor(interval.TimeIntervalName))" value="@interval.TimeColor" style="width:50%; height:30px">
+         </div>
+      </div>
+      <br />}}
+      <br /><br /><br />
+      <div class="text-left">
+         <button disabled="@Busy" class="btn btn-warning"
+            @onclick="CancelAsync">
+         Cancel
+         </button>&nbsp;
+         <button disabled="@Busy" type="submit"
+            class="btn btn-primary">
+         @Mode
+         </button>
+      </div>
+   </div>
+</EditForm>
+}
+
+@code
+{ /// <summary>
+    /// Let parent handle result of validation.
+    /// </summary>
+    [Parameter]
+    public EventCallback<bool> ValidationResult { get; set; }
+
+    /// <summary>
+    /// Let parent handle what to do on cancel.
+    /// </summary>
+    [Parameter]
+    public EventCallback CancelRequest { get; set; }
+
+    /// <summary>
+    /// <c>True</c> if add mode.
+    /// </summary>
+    [Parameter]
+    public bool IsAdd { get; set; }
+
+    /// <summary>
+    /// The <see cref="Schedule"/> to upsert.
+    /// </summary>
+    [Parameter]
+    public Schedule Schedule { get; set; }
+
+    [Parameter]
+    public LIFXService LIFXService { get; set; }
+
+    /// <summary>
+    /// The database version of <see cref="Schedule"/> if a concurrency issue
+    /// exists.
+    /// </summary>
+    [Parameter]
+    public Schedule DbSchedule { get; set; }
+
+    /// <summary>
+    /// Prevent multiple asynchronous operations at the same time.
+    /// </summary>
+    [Parameter]
+    public bool Busy { get; set; }
+
+    /// <summary>
+    /// Mode.
+    /// </summary>
+    private string Mode => IsAdd ? "Add" : "Edit";
+
+    private IEnumerable<object> loadedLights;
+
+    private bool IsValid = true;
+
+    string lifxMessageClass;
+
+    bool showLifxMessage = false;
+    string lifxMessage;
+
+    bool isLoadingLights = false;
+
+
+    /// <summary>
+    /// Ask to cancel.
+    /// </summary>
+    /// <returns>A <see cref="Task"/>.</returns>
+    private Task CancelAsync()
+    {
+        IsValid = false;
+        return CancelRequest.InvokeAsync(null);
+    }
+
+    /// <summary>
+    /// Handle form submission request.
+    /// </summary>
+    /// <param name="isValid"><c>True</c> when field validation passed.</param>
+    /// <returns>A <see cref="Task"/>.</returns>
+    private Task HandleSubmitAsync(bool isValid)
+    {
+        return ValidationResult.InvokeAsync(isValid && IsValid);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadLights();
+    }
+
+    private void OnChange(ChangeEventArgs e)
+    {
+        var light = e.Value.ToString();
+        Schedule.SelectedLIFXItemId = light;
+    }
+
+    async Task LoadLights()
+    {
+        isLoadingLights = true;
+        if (!string.IsNullOrEmpty(Schedule.LIFXApiKey))
+        {
+            if (LIFXService == null)
+            {
+                LIFXService = new LIFXService(Schedule.LIFXApiKey);
+            }
+            try
+            {
+                if (!string.IsNullOrEmpty(Schedule.SelectedLIFXItemId))
+                {
+                    if (Schedule.SelectedLIFXItemId.Contains("group_id"))
+                    {
+                        loadedLights = await LIFXService.GetAllGroupsAsync();
+                    }
+                    else
+                    {
+                        loadedLights = await LIFXService.GetAllLightsAsync();
+                    }
+                }
+            }
+            catch
+            {
+                this.StateHasChanged();
+            }
+        }
+        isLoadingLights = false;
+    }
+
+
+    async Task CheckLIFX(string type)
+    {
+        isLoadingLights = true;
+        if (!string.IsNullOrEmpty(Schedule.LIFXApiKey))
+        {
+            if (LIFXService == null)
+            {
+                LIFXService = new LIFXService(Schedule.LIFXApiKey);
+            }
+            try
+            {
+                if (type == "Groups")
+                {
+                    loadedLights = await LIFXService.GetAllGroupsAsync();
+                }
+                else
+                {
+                    loadedLights = await LIFXService.GetAllLightsAsync();
+                }
+
+                showLifxMessage = true;
+                lifxMessage = "Connected to LIFX Cloud";
+                lifxMessageClass = "text-success";
+            }
+            catch
+            {
+                showLifxMessage = true;
+                lifxMessage = "Error Occured Connecting to LIFX, please try again";
+                lifxMessageClass = "text-danger";
+                this.StateHasChanged();
+            }
+        }
+        isLoadingLights = false;
+    }
+
+
+    async Task SetColor(string name)
+    {
+        var interval = Schedule.TimeIntervals.Where(a => a.TimeIntervalName == name).FirstOrDefault();
+
+        if (interval != null)
+        {
+            interval.TimeColor = await jsRuntime.InvokeAsync<string>("getColor", interval.TimeIntervalName);
+        }
+    }
+
+    void RemoveInterval(string name)
+    {
+        var interval = Schedule.TimeIntervals.Where(a => a.TimeIntervalName == name).FirstOrDefault();
+
+        if (interval != null)
+        {
+            Schedule.TimeIntervals.Remove(interval);
+        }
+    }
+
+    void AddNewInterval()
+    {
+        Schedule.TimeIntervals.Add(new TimeInterval());
+    } 
+}

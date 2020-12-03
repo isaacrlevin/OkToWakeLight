@@ -1,15 +1,18 @@
+using System;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using OkToWake.Data;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using OkToWake.Models;
+using Blazorise;
+using Blazorise.Bootstrap;
+using Blazorise.Icons.FontAwesome;
+using Microsoft.EntityFrameworkCore;
+using OkToWake.Areas.Identity.Data;
+using OkToWake.Services;
+using OkToWake.Grid;
+using System.IO;
 
 namespace OkToWake
 {
@@ -19,21 +22,41 @@ namespace OkToWake
         {
             Configuration = configuration;
         }
-
         public IConfiguration Configuration { get; }
 
         // This method gets called by the runtime. Use this method to add services to the container.
         // For more information on how to configure your application, visit https://go.microsoft.com/fwlink/?LinkID=398940
         public void ConfigureServices(IServiceCollection services)
         {
+            var dataFolder = $"Data Source={System.IO.Directory.GetCurrentDirectory()}/Data/{Configuration.GetConnectionString("OkToWakeContextConnection")}";
+            services.AddDbContext<OkToWakeContext>(options =>
+                options.UseSqlite(dataFolder));
+
+            // pager
+            services.AddScoped<IPageHelper, PageHelper>();
+
+            // filters
+            services.AddScoped<IScheduleFilters, GridControls>();
+
+            // query adapter (applies filter to schedule request).
+            services.AddScoped<GridQueryAdapter>();
+
+            // service to communicate success on edit between pages
+            services.AddScoped<EditSuccess>();
+
+            services.AddDefaultIdentity<OkToWakeUser>()
+                .AddEntityFrameworkStores<OkToWakeContext>();
+
+            services.AddBlazorise(options =>
+            {
+                options.ChangeTextOnKeyPress = true; // optional
+            }).AddBootstrapProviders().AddFontAwesomeIcons();
+
             services.AddHttpContextAccessor();
-            services.Configure<ConfigWrapper>(Configuration);
             services.AddOptions();
             services.AddRazorPages();
             services.AddServerSideBlazor();
-            services.AddSingleton<WeatherForecastService>();
-            services.AddSingleton<AppState, AppState>();
-            services.AddSingleton<LIFXService, LIFXService>();
+            services.AddScoped<IBackgroundScheduleProcessor, BackgroundScheduleProcessor>();
             services.AddHostedService<Worker>();
         }
 
@@ -47,14 +70,21 @@ namespace OkToWake
             else
             {
                 app.UseExceptionHandler("/Error");
-                // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-                app.UseHsts();
             }
 
-            app.UseHttpsRedirection();
+            if (Configuration.GetValue<bool>("UseSSL"))
+            {
+                app.UseHsts();
+                app.UseHttpsRedirection();
+            }
+
             app.UseStaticFiles();
 
             app.UseRouting();
+
+            app.ApplicationServices
+                .UseBootstrapProviders()
+                .UseFontAwesomeIcons();
 
             app.UseEndpoints(endpoints =>
             {

@@ -1,86 +1,49 @@
 ﻿using System;
-using System.Threading;
-using System.Threading.Tasks;
-using LifxCloud.NET.Models;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using OkToWake.Services;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace OkToWake
 {
     public class Worker : BackgroundService
     {
-        private readonly ConfigWrapper Config;
-        private readonly AppState _appState;
         private readonly ILogger<Worker> _logger;
 
-
-        private LIFXService _lifxService;
-        public Worker(ILogger<Worker> logger,
-                      IOptionsMonitor<ConfigWrapper> optionsAccessor,
-                      AppState appState,
-                      LIFXService lifxService)
+        public Worker(IServiceProvider services,
+            ILogger<Worker> logger)
         {
-            Config = optionsAccessor.CurrentValue;
-            _lifxService = lifxService;
+            Services = services;
             _logger = logger;
-            _appState = appState;
         }
+
+        public IServiceProvider Services { get; }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                try
-                {
-                    await GetData();                   
-                }
-                catch (Exception e)
-                {
-                    var foo = e;
-                }
-                await Task.Delay(Convert.ToInt32(Config.PollingInterval * 1000), stoppingToken);
+                await RunScopedWorker(stoppingToken);
+                await Task.Delay(1000, stoppingToken);
             }
         }
 
-
-        private async Task GetData()
+        private async Task RunScopedWorker(CancellationToken stoppingToken)
         {
-            if (!string.IsNullOrEmpty(Config.LIFXApiKey))
+            using (var scope = Services.CreateScope())
             {
-                foreach (TimeInterval interval in Config.TimeIntervals)
-                {
-                    if (IsInRange(interval.TimeIntervalStart, interval.TimeIntervalEnd))
-                    {
-                        await _lifxService.SetColor(interval.TimeColor, (Selector)Config.SelectedLIFXItemId);
-                        _logger.LogInformation($"Current time is : {DateTime.Now.ToShortDateString()} {DateTime.Now.ToShortTimeString()}, interval: {interval.TimeIntervalName}, range: {interval.TimeIntervalStart} - {interval.TimeIntervalEnd}, light updated to {interval.TimeColor}");
-                        break;
-                    }
-                }
-            }
+                var scopedProcessingService =
+                    scope.ServiceProvider
+                        .GetRequiredService<IBackgroundScheduleProcessor>();
 
-            Thread.Sleep(Convert.ToInt32(Config.PollingInterval * 1000));
+                await scopedProcessingService.ProcessSchedules();
+            }
         }
-
-        private bool IsInRange(string startTime, string endTime)
+        public override async Task StopAsync(CancellationToken stoppingToken)
         {
-            bool isInRange = false;
-            // convert datetime to a TimeSpan
-            bool validStart = TimeSpan.TryParse(startTime, out TimeSpan start);
-            bool validEnd = TimeSpan.TryParse(endTime, out TimeSpan end);
-
-            TimeSpan now = DateTime.Now.TimeOfDay;
-            // see if start comes before end
-            if (start < end)
-            {
-                isInRange = start <= now && now <= end;
-                return isInRange;
-            }
-            // start is after end, so do the inverse comparison
-
-            isInRange = !(end < now && now < start);
-
-            return isInRange;
+            await base.StopAsync(stoppingToken);
         }
     }
 }

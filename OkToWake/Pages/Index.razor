@@ -1,61 +1,250 @@
 ﻿@page "/"
+@page "/{Page:int}"
+@using Microsoft.EntityFrameworkCore
 @using BlazorColorPicker
 
-@inject IOptionsMonitor<ConfigWrapper> Config
-@inject AppState appState
-@inject IJSRuntime jsRuntime;
-<div class="container text-body">
+@inject IScheduleFilters Filters
+@inject OkToWakeContext _context
+@inject Microsoft.AspNetCore.Http.IHttpContextAccessor _httpContextAccessor
+@inject NavigationManager Nav
+@inject GridQueryAdapter QueryAdapter
 
-    Add New Row
-
-
-    @foreach (var interval in Config.CurrentValue.TimeIntervals)
-    {
+<h1>Schedules</h1>
+<GridWrapper @ref="Wrapper"
+             FilterChanged="ReloadAsync"
+             DeleteRequested="id => Wrapper.DeleteRequestId = id">
+    <div class="container-fluid schedule-grid">
         <div class="row">
-            <div class="container-fluid">
-                <div class="row-fluid">
-                    <div class="centering text-center">
-                        <span>Time Interval Name:  @interval.TimeIntervalName</span> <input value="@interval.TimeIntervalStart" type="time" id="@interval.TimeIntervalName + @interval.TimeIntervalStart" name="@interval.TimeIntervalName + @interval.TimeIntervalStart"> 
-                        To <input value="@interval.TimeIntervalEnd" type="time" id="@interval.TimeIntervalName + @interval.TimeIntervalEnd" name="@interval.TimeIntervalName + @interval.TimeIntervalEnd">
-                        <br />
-                        <input type="color" id="html5colorpicker" @onchange="@((ev) => SetColor(interval.TimeIntervalName))" value="@interval.TimeColor" style="width:20%;">
-                        <br />
-                    </div>
-                </div>
+            <div class="col-8">
+                <TextFilter />
             </div>
         </div>
-    }
-    <div class="row">
-        <div class="container-fluid">
-            <div class="row-fluid">
-                <div class="centering text-center">
-                    Save Intervals <button @onclick="SaveSettings" class="btn btn-primary">Set Color</button>
-                </div>
+        <div class="row">&nbsp;</div>
+        <NavLink class="nav-link" href="add">
+            <span class="oi oi-plus" aria-hidden="true"></span> Add New Schedule
+        </NavLink>
+        <div class="row">
+            <div class="col-6">
+                Page @Filters.PageHelper.Page of @Filters.PageHelper.PageCount:
+                showing @Filters.PageHelper.PageItems of
+                @Filters.PageHelper.TotalItemCount items.
+                <a disabled="@(Filters.Loading || !Filters.PageHelper.HasPrev)"
+                   class="btn btn-primary @IsDisabled(Filters.PageHelper.HasPrev)"
+                   href="@Filters.PageHelper.PrevPage">
+                    Previous
+                </a>
+                <a disabled="@(Filters.Loading || !Filters.PageHelper.HasNext)"
+                   class="btn btn-primary @IsDisabled(Filters.PageHelper.HasNext)"
+                   href="@Filters.PageHelper.NextPage">
+                    Next
+                </a>
             </div>
         </div>
+        <div class="row">&nbsp;</div>
+        <table class="table table-bordered table-striped table-hover">
+            <thead class="thead-dark">
+                <tr>
+                    <th scope="col">&nbsp;</th>
+                    <th scope="col" @onclick="@(async ()=>await ToggleAsync(ScheduleFilterColumns.ScheduleName))">
+                        <SortIndicator Column="@(ScheduleFilterColumns.ScheduleName)" />
+                        Schedule Name
+                    </th>
+                    <th scope="col">Is Enabled</th>
+                    <th scope="col">Polling Interval</th>
+                    <th scope="col">Brightness</th>
+                </tr>
+            </thead>
+            @if (Filters.Loading || Schedules == null)
+            {
+                <tr>
+                    <td colspan="5" class="col-12 alert alert-info">
+                        <Pulse />
+                    </td>
+                </tr>
+            }
+            @if (Schedules != null && Schedules.Count == 0)
+            {
+                <tr>
+                    <td colspan="5" class="col-12 alert alert-warning">
+                        No schedules found.
+                    </td>
+                </tr>
+            }
+            @if (Schedules != null)
+            {
+                @foreach (var schedule in Schedules)
+                {
+                    <ScheduleRow @key=schedule CurrentSchedule="@schedule"
+                                 DeleteSchedule="DeleteScheduleAsync" />
+                }
+            }
+        </table>
     </div>
-
-</div>
-
+</GridWrapper>
 
 @code {
-    bool settingsSaved = false;
-    string message;
-
-    async Task SetColor(string name)
+    /// <summary>
+    /// The current page.
+    /// </summary>
+    [Parameter]
+    public int Page
     {
-        var interval = Config.CurrentValue.TimeIntervals.Where(a => a.TimeIntervalName == name).FirstOrDefault();
-
-        if (interval != null)
+        get => Filters.PageHelper.Page;
+        set
         {
-            interval.TimeColor = await jsRuntime.InvokeAsync<string>("getColor");
+            Filters.PageHelper.Page = value;
         }
     }
 
-    void SaveSettings()
+    /// <summary>
+    /// A wrapper for grid-related activity (like delete).
+    /// </summary>
+    private GridWrapper Wrapper { get; set; }
+
+    /// <summary>
+    /// Current page of <see cref="Schedule"/>.
+    /// </summary>
+    private ICollection<Schedule> Schedules { get; set; }
+
+    /// <summary>
+    /// Helper method to set disabled on class for paging.
+    /// </summary>
+    /// <param name="condition"><c>true</c> when the element is active (and therefore should not be disabled).</param>
+    /// <returns>The string literal "disabled" or an empty string.</returns>
+    private string IsDisabled(bool condition) =>
+    !Filters.Loading && condition ? "" : "disabled";
+
+    /// <summary>
+    /// Keeps track of the last page loaded.
+    /// </summary>
+    private int _lastPage = -1;
+
+    /// <summary>
+    /// Main logic when getting started.
+    /// </summary>
+    /// <param name="firstRender"><c>true</c> for first-time render.</param>
+    protected override void OnAfterRender(bool firstRender)
     {
-        System.IO.File.WriteAllText($"{System.IO.Directory.GetCurrentDirectory()}/appsettings.json", JsonConvert.SerializeObject(Config.CurrentValue));
-        message = "Settings Saved";
-        settingsSaved = true;
+        // Ensure we're on the same, er, right page.
+        if (_lastPage < 1)
+        {
+            Nav.NavigateTo("/1");
+            return;
+        }
+
+        // Normalize the page values.
+        if (Filters.PageHelper.PageCount > 0)
+        {
+            if (Page < 1)
+            {
+                Nav.NavigateTo("/1");
+                return;
+            }
+            if (Page > Filters.PageHelper.PageCount)
+            {
+                Nav.NavigateTo($"/{Filters.PageHelper.PageCount}");
+                return;
+            }
+        }
+        base.OnAfterRender(firstRender);
+    }
+
+    /// <summary>
+    /// Triggered for any paging update.
+    /// </summary>
+    /// <returns>A <see cref="Task"/>.</returns>
+    protected async override Task OnParametersSetAsync()
+    {
+        // Make sure the page really chagned.
+        if (Page != _lastPage)
+        {
+            _lastPage = Page;
+            await ReloadAsync();
+        }
+        await base.OnParametersSetAsync();
+    }
+
+    /// <summary>
+    /// Used to toggle the grid sort. Will either switch to "ascending" on a new
+    /// column, or toggle beteween "ascending" and "descending" on a column with the
+    /// sort already set.
+    /// </summary>
+    /// <param name="col">The <see cref="ScheduleFilterColumns"/> to toggle.</param>
+    /// <returns>A <see cref="Task"/>.</returns>
+    private Task ToggleAsync(ScheduleFilterColumns col)
+    {
+        if (Filters.SortColumn == col)
+        {
+            Filters.SortAscending = !Filters.SortAscending;
+        }
+        else
+        {
+            Filters.SortColumn = col;
+        }
+        return ReloadAsync();
+    }
+
+    /// <summary>
+    /// Deletes a schedule.
+    /// </summary>
+    /// <returns>A <see cref="Task"/>.</returns>
+    #region snippet1
+    private async Task DeleteScheduleAsync()
+    {
+        Filters.Loading = true;
+
+        try
+        {
+            var schedule = await _context.Schedules.FirstAsync(
+                c => c.ScheduleId == Wrapper.DeleteRequestId);
+
+            if (schedule != null)
+            {
+                if (schedule.TimeIntervals != null)
+                {
+                    _context.TimeIntervals.RemoveRange(schedule.TimeIntervals);
+                }
+
+
+                _context.Schedules.Remove(schedule);
+                await _context.SaveChangesAsync();
+            }
+        }
+        catch (Exception e)
+        {
+            var mee = e.Message;
+        }
+
+        Filters.Loading = false;
+
+        await ReloadAsync();
+    }
+    #endregion
+
+    /// <summary>
+    /// Reload page based on filters and paging controls.
+    /// </summary>
+    /// <returns>A <see cref="Task"/>.</returns>
+    private async Task ReloadAsync()
+    {
+        if (Filters.Loading || Page < 1)
+        {
+            return;
+        }
+
+        Filters.Loading = true;
+
+        if (Wrapper != null)
+        {
+            Wrapper.DeleteRequestId = Guid.Empty;
+        }
+
+        Schedules = null;
+
+        // run the query to load the current page
+        Schedules = await QueryAdapter.FetchAsync(_context.Schedules.AsQueryable());
+
+        // now we're done
+        Filters.Loading = false;
     }
 }

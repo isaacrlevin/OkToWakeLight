@@ -1,0 +1,335 @@
+﻿@page "/View/{ScheduleId:guid}"
+
+@using Microsoft.EntityFrameworkCore
+
+@inject IPageHelper PageHelper
+@inject EditSuccess EditSuccessState
+@inject OkToWakeContext _context
+
+@if (NotFound && !Loading)
+{
+<div class="alert alert-warning">A Schedule with that id doesn't exist.</div>
+}
+else
+{
+@if (Schedule == null || Loading)
+{
+<Pulse Center="true" />
+}
+else
+{
+<h1>@Schedule.ScheduleName</h1>
+<Switch TValue="bool" Disabled="true" @bind-Checked="@Schedule.IsEnabled">Is Enabled</Switch>
+<NavLink class="nav-link" href="/">
+   Back
+</NavLink>
+@if (EditSuccess)
+{
+<div class="alert alert-success">Successfully updated the Schedule.</div>
+}
+<hr />
+<br />
+<div class="container text-body centering text-center">
+   <div class="row">
+      <div class="col-4">
+         <h5>Schedule Name</h5>
+      </div>
+      <div class="col-7">
+         <input style="width: 100%; text-align:center" @bind-value="@Schedule.ScheduleName" disabled="disabled" type="text" />
+      </div>
+   </div>
+   <div class="row">
+      <div class="col-4">
+         <h5>LIFX Token</h5>
+      </div>
+      <div class="col-7">
+         <input disabled="disabled" style="width: 100%; text-align:center" @bind-value="@Schedule.LIFXApiKey" type="text" />
+      </div>
+   </div>
+   <br /><br />
+   <div style="height:150px">
+      <br />
+      @if (loadedLights != null)
+      {
+      <div class="row">
+         <div class="col-12">
+            <select disabled="disabled" class="custom-select" style="width:50%">
+               <option disabled="disabled">Select</option>
+               @foreach (var light in loadedLights)
+               {
+               if (light.GetType() == typeof(LifxCloud.NET.Models.Group))
+               {
+               var obj = (LifxCloud.NET.Models.Group)light;
+               @if ($"group_id:{obj.Id}" == Schedule.SelectedLIFXItemId)
+               {
+               <option selected="selected" value=group_id:@obj.Id>@obj.Label</option>
+               }
+               else
+               {
+               <option value=group_id:@obj.Id>@obj.Label</option>
+               } }
+               else
+               {
+               var obj = (LifxCloud.NET.Models.Light)light;
+               @if ($"id:{obj.Id}" == Schedule.SelectedLIFXItemId)
+               {
+               <option selected="selected" value=id:@obj.Id>@obj.Label</option>
+               }
+               else
+               {
+               <option value=id:@obj.Id>@obj.Label</option>
+               }}
+               }
+            </select>
+         </div>
+      </div>
+      }
+   </div>
+   <br />
+   <br />
+   <div class="row">
+      <div class="col-4">
+         <h5>Light Update Interval (in seconds)</h5>
+      </div>
+      <div class="col-6">
+         <Slider TValue="double" Disabled="true" @bind-Value="Schedule.PollingInterval" Step=".1" Min="1.0" Max="5.0" />
+      </div>
+      <div class="col-1">
+         <input style="width:50px" disabled="disabled" @bind-value="@Schedule.PollingInterval" type="text" />
+      </div>
+   </div>
+   <br /><br />
+   <div class="row">
+      <div class="col-4">
+         <h5>Brightness</h5>
+      </div>
+      <div class="col-6">
+         <Slider TValue="int" Disabled="true" @bind-Value="Schedule.Brightness" Step="1" Min="0" Max="100" />
+      </div>
+      <div class="col-1">
+         <input style="width:50px" disabled="disabled" @bind-value="@Schedule.Brightness" type="text" />
+      </div>
+   </div>
+   <br /><br /><br /><br />
+   <h3>Time Intervals</h3>
+   <br />
+   <br />
+   @if (Schedule.TimeIntervals.Count == 0)
+   {
+   <div class="row">
+      <div class="col-12 alert alert-warning">
+         No Intervals exist.
+      </div>
+   </div>
+   }
+   else
+   {
+   @foreach (var interval in Schedule.TimeIntervals)
+   {
+   <div class="row">
+      <div class="col-6">
+         <h5>Time Interval Name: <input type="text" @bind-value=@interval.TimeIntervalName /></h5>
+      </div>
+      <div class="col-6">
+         <input disabled="disabled" @bind="interval.TimeIntervalStartAsDate" type="time" id="@interval.TimeIntervalName + 'Start'" name="@interval.TimeIntervalName + 'Start'">
+         To <input disabled="disabled" @bind="@interval.TimeIntervalEndAsDate" type="time" id="@interval.TimeIntervalName + 'End'" name="@interval.TimeIntervalName + 'End'">
+      </div>
+   </div>
+   <br />
+   <div class="row">
+      <div class="col-12">
+         <input type="color" disabled="disabled" id="@interval.TimeIntervalName" value="@interval.TimeColor" style="width:50%; height:30px">
+      </div>
+   </div>
+   <br />}}
+   <br /><br />
+   <div class="text-left">
+      <a class="btn btn-primary" title="Go Back" href="@PageHelper.Page">
+      🔙 Back to Grid
+      </a>
+      @if (!Deleted)
+      {
+      <span>&nbsp;&nbsp;</span><a class="btn btn-primary" href="edit/@Schedule.ScheduleId" title="Edit">Edit</a><span>&nbsp;&nbsp;</span>
+      @if (!ShowConfirmation)
+      {
+      <button class="btn btn-danger" @onclick="@(() => { ShowConfirmation = true; EditSuccess = false; })">Delete</button> }
+      else
+      {
+      <br />
+      <br />
+      <DeletePrompt Confirmation="@(async result => await ConfirmAsync(result))" />
+      } }
+      else
+      {
+      <div class="btn btn-danger">🚫 This item has been deleted.</div>
+      }
+   </div>
+</div>
+}
+}
+
+@code { /// <summary>
+            /// Tracking of asynchronous calls.
+            /// </summary>
+            private bool Loading;
+
+            /// <summary>
+            /// Id from route of Schedule.
+            /// </summary>
+            [Parameter]
+            public Guid ScheduleId { get; set; }
+
+            /// <summary>
+            /// Navigation check.
+            /// </summary>
+            private Guid _lastScheduleId;
+
+            /// <summary>
+            /// True with redirect from successful edit.
+            /// </summary>
+            [Parameter]
+            public bool EditSuccess { get; set; }
+
+            /// <summary>
+            /// Schedule entity.
+            /// </summary>
+            private Schedule Schedule { get; set; }
+
+            /// <summary>
+            /// Set to true when not found.
+            /// </summary>
+            private bool NotFound = false;
+
+            /// <summary>
+            /// Set to true when delete is requested.
+            /// </summary>
+            private bool ShowConfirmation = false;
+
+            /// <summary>
+            /// Set to true when delete is successful
+            /// </summary>
+            private bool Deleted = false;
+
+            private IEnumerable<object> loadedLights;
+
+            private LIFXService LIFXService { get; set; }
+
+            /// <summary>
+            /// Navigated
+            /// </summary>
+            /// <returns>Task</returns>
+            protected override async Task OnParametersSetAsync()
+            {
+                if (_lastScheduleId != ScheduleId)
+                {
+                    EditSuccess = EditSuccessState.Success;
+                    EditSuccessState.Success = false;
+                    _lastScheduleId = ScheduleId;
+                    await LoadScheduleAsync();
+                }
+                await base.OnParametersSetAsync();
+            }
+
+            /// <summary>
+            /// Confirm deletion
+            /// </summary>
+            /// <param name="result">True when user confirmed</param>
+            /// <returns>Task</returns>
+            private async Task ConfirmAsync(bool result)
+            {
+                if (result)
+                {
+                    await DeleteAsync();
+                }
+                else
+                {
+                    ShowConfirmation = false;
+                    EditSuccess = false;
+                }
+            }
+
+            /// <summary>
+            /// Loads the Schedule
+            /// </summary>
+            /// <returns>Task</returns>
+            private async Task LoadScheduleAsync()
+            {
+                if (Loading)
+                {
+                    return; //avoid concurrent requests
+                }
+
+                NotFound = false;
+                Schedule = null;
+
+                Loading = true;
+
+                Schedule = await _context.Schedules.Include(a => a.TimeIntervals).AsNoTracking()
+                    .SingleOrDefaultAsync(c => c.ScheduleId == ScheduleId);
+
+                if (Schedule == null)
+                {
+                    NotFound = true;
+                }
+                await CheckLIFX();
+                Loading = false;
+            }
+
+            async Task CheckLIFX()
+            {
+                if (!string.IsNullOrEmpty(Schedule.LIFXApiKey))
+                {
+                    if (LIFXService == null)
+                    {
+                        LIFXService = new LIFXService(Schedule.LIFXApiKey);
+                    }
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(Schedule.SelectedLIFXItemId))
+                        {
+                            if (Schedule.SelectedLIFXItemId.Contains("group_id"))
+                            {
+                                loadedLights = await LIFXService.GetAllGroupsAsync();
+                            }
+                            else
+                            {
+                                loadedLights = await LIFXService.GetAllLightsAsync();
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        this.StateHasChanged();
+                    }
+                }
+            }
+
+            /// <summary>
+            /// Deletes the Schedule.
+            /// </summary>
+            /// <returns>Task</returns>
+            private async Task DeleteAsync()
+            {
+                if (Loading)
+                {
+                    return; // avoid concurrent requests
+                }
+
+                Loading = true;
+                var Schedule = await _context.Schedules
+                    .SingleOrDefaultAsync(c => c.ScheduleId == ScheduleId);
+                if (Schedule != null)
+                {
+                    _context.Schedules.Remove(Schedule);
+                    await _context.SaveChangesAsync();
+                    Loading = false;
+                    Deleted = true;
+                }
+                else
+                {
+                    Loading = false;
+                    // show not found
+                    await LoadScheduleAsync();
+                }
+            } 
+    }
