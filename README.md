@@ -7,12 +7,12 @@ individual lights or groups of lights where you can customize the color based on
 "orange" when is bedtime and "green" when it is ok to wake aka come out of his room. I could configure a schedule like so.
 
 
-![Schedule](static/schedule.png)
+![Schedule](https://github.com/isaacrlevin/OkToWakeLight/raw/main/static/schedule.png)
 
 
 You can select any color to have your lights set to by choosing from the color picker. 
 
-![Interval](static/interval.png)
+![Interval](https://github.com/isaacrlevin/OkToWakeLight/raw/main/static/interval.png)
 
 ## Configuration
 
@@ -21,7 +21,7 @@ that is generated on first app run.
 
 There is also a screen for you to manage all your schedules.
 
-![Index](static/index.png)
+![Index]https://github.com/isaacrlevin/OkToWakeLight/raw/main/static/index.png)
 
 
 ## Running in Docker
