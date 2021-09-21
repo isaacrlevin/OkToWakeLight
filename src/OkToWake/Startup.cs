@@ -82,9 +82,6 @@ namespace OkToWake
 
             app.UseRouting();
 
-            app.ApplicationServices
-                .UseBootstrapProviders()
-                .UseFontAwesomeIcons();
 
             app.UseEndpoints(endpoints =>
             {

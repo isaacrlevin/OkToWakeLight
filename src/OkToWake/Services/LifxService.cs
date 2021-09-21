@@ -1,7 +1,8 @@
-﻿using System;
-using LifxCloud.NET;
+﻿using LifxCloud.NET;
 using LifxCloud.NET.Models;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace OkToWake
@@ -24,7 +25,10 @@ namespace OkToWake
             }
 
             _client = await LifxCloudClient.CreateAsync(_apiKey);
-            return await _client.ListLights(Selector.All);
+            var loadedLights = await _client.ListLights(Selector.All);
+            loadedLights = loadedLights.Where(a => !string.IsNullOrEmpty(a.Label)).ToList();
+
+            return loadedLights;
         }
 
         public async Task<List<Group>> GetAllGroupsAsync()
@@ -34,7 +38,10 @@ namespace OkToWake
                 return new List<Group>();
             }
             _client = await LifxCloudClient.CreateAsync(_apiKey);
-            return await _client.ListGroups(Selector.All);
+            var loadedLights = await _client.ListGroups(Selector.All);
+            loadedLights = loadedLights.Where(a => !string.IsNullOrEmpty(a.Label)).ToList();
+
+            return loadedLights;
         }
         public async Task<ApiResponse> SetColor(string color, int brightness, Selector selector)
         {
